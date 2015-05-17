@@ -1,23 +1,24 @@
-# Composing Synchronous and Asynchronous Functions in JavaScript
+# Составление синхронных и асинхронных функций в JavaScript
 
-Our example application implements a function `createEmployee` that is used to
-create an employee from a personId.
+Наше приложение для примера реализует функцию `createEmployee`, которая создает
+сотрудника по его персональному ID.
 
-To create an employee, our system loads some data from our database, validates
-that data, and then performs an insert. Some of our functions are written in 
-continuation-passing style (they accept a callback) and some are written in a 
-direct style (they return values and/or throw exceptions). We’d like to compose 
-these functions in such a way that they succeed or fail as a single unit – that 
-any error in any segment of the sequence will cause subsequent steps to be 
-skipped with a failure – but with some of our validations happening 
-synchronously and some asynchronously, this can be difficult to do.
+Для создания сотрудника, наша система загружает некоторые данные из базы,
+проверяет эти данные, и затем выполняет вставку. Некоторые из наших функций
+написаны в стиле передачи продолжений (то есть, принимают коллбэк-функцию *([
+рограммирование в стиле передачи продолжений][1] - прим.пер.)*), а некоторые в
+прямом стиле (то есть, возвращают значения и/или пробрасывают исключения). Нам
+хотелось бы составить  данные функции таким образом, чтобы они обрабатывали
+успешное выполнение и неудачное как единое целое – чтобы любая ошибка, на любом
+шаге последовательности вызывала последующие шаги, которые иначе были бы
+пропущены. Но когда часть проверок выполняется синхронно, а часть - асинхронно,
+такое организовать непросто.
 
-To work around this problem, programmers will inline anonymous functions to
-thread return values and exceptions from direct-style code to our callbacks. For
-example:
+Чтобы обойти эту проблему, программисты встраивают анонимные функции, передающие
+возвращаемые значения и исключения в коллбэки. Например:
 
     function hasWildHair(person) {
-        return person.hairColor !== 'Green' || person.hairColor !== 'Pink'
+        return person.hairColor !== 'Зеленые' || person.hairColor !== 'Розовые'
     }
     
     function isOfAge(person) {
@@ -30,7 +31,7 @@ example:
               callback(err);
           }
           else if (license.expired) {
-              callback('Person must have valid license.');
+              callback('Человек должен иметь действующие водительские права.');
           }
           else {
               callback(null, person);
@@ -48,7 +49,7 @@ example:
                     callback(null, person);   
                 }
                 else {
-                    callback('Person must have wild hair.');
+                    callback('Человек должен иметь дикие волосы.');
                 }
             },
             function(person, callback) {
@@ -56,7 +57,7 @@ example:
                     callback(null, person);
                 }
                 else {
-                    callback('Person must be 18+ years of age.');
+                    callback('Человеку должно быть больше 18 лет.');
                 }
             }
             Database.getPersonById);
@@ -65,24 +66,23 @@ example:
     }
     
 
-There are a few problems with this approach:
+При таком подходе возникает несколько проблем:
 
-1.  We’ve introduced two throwaway function expressions which add visual
-    noise and some maintenance overhead.
+1.  Мы включили две одноразовые функции, которые добавляют визуальный шум и
+некоторые затраты на обслуживание.
    
-2.  Our direct-style code (hair color and of-age validations) isn’t
-    accessible outside of the CPS function that wraps it.
+2.  Наш код в прямом стиле (проверка цвета волос и возраста) недоступен за
+пределами оборачивающих его функций.
    
-3.  Our throwaway functions contain the logic to transmute the predicate-
-    failures to error messages. Check for wild hair in ten places in your codebase? 
-    Ten places to add the check for null and hitting a callback with ‘Person must 
-    have wild hair.
-    ’
+3.  Наши одноразовые функции содержат логику преобразования функций-предикатов,
+возвращающих false, в сообщения об ошибке. Нужно проверить человека на наличие
+диких волос десять раз в коде? Десять раз добавьте проверку на `null` и вызов
+сообщения «Человек должен иметь дикие волосы.»
 
-In this post, I’ll demonstrate an approach to using higher-order functions to
-lift direct-style functions into the world of callbacks – enabling composition 
-without the introduction of boilerplate function expressions. Once done, the 
-above code will look like this:
+В этом посте я продемонстрирую способ использовать функции высшего порядка,
+переносящие функции в прямом стиле в мир коллбэков – включая композицию без
+введения обычных функциональных выражений. После этого, код выше будет
+выглядеть так:
 
     var createEmployee = async.compose(
         Database.createEmployee,
@@ -93,12 +93,12 @@ above code will look like this:
         Database.getPersonById);
     
 
-### Step 1: Writing Failable Functions
+### Шаг 1: Пишем функции, пробрасывающие ошибки
 
-First, we’ll write a higher-order function that accepts a predicate, a value
-to which we’ll apply the predicate, and an error to throw in the event that our 
-value does not satisfy the predicate. Why throw an error? This helps consuming 
-functions differentiate the function’s success from failure.
+Для начала, мы напишем функцию высшего порядка, которая будет принимать предикат,
+в значение которого будет передаваться предикат, и ошибку для пробрасывания в
+случае, если наше значение не соответствует предикату. Зачем нужно пробрасывать
+ошибку? Это  убирает различия от того, выполнилась ли функция успешно или нет.
 
     function ensure(predicate, error, value) {
         if (predicate(value) {
@@ -110,15 +110,14 @@ functions differentiate the function’s success from failure.
     }
     
 
-We can now compose `ensure` with our predicates, creating reusable failable
-validators:
+Теперь мы можем составить `ensure` из наших предикатов, создав переиспользуемые
+валидаторы, пробрасывающие ошибки:
 
-    var ensureWildHair = _.partial(ensure, hasWildHair, 'Person must have wild hair.');
-    var ensureOfAge    = _.partial(ensure, ofAge, 'Person must be 18+ years of age.');
+    var ensureWildHair = _.partial(ensure, hasWildHair, 'Человек должен иметь дикие волосы.');
+    var ensureOfAge    = _.partial(ensure, ofAge, 'Человеку должно быть больше 18 лет.');
     
 
-…which moves some of the error handling out of our larger, employee-creation
-function:
+…что переместит часть обработки ошибок за пределы наших больших функций создания сотрудника:
 
     function createEmployee(personId, callback) {
         var workflow = async.compose(
@@ -147,12 +146,12 @@ function:
     }
     
 
-### Step 2: Working in the World of Callbacks
+### Шаг 2: Работаем в мире коллбэков
 
-We’ve dumbed down the responsibilities of the throwaway function expressions
-and centralized error creation and predicate handling into a generalized utility
-function`ensure`. Now, we’ll write some code that will allow us to use a
-direct-style function in a continuation-passing style context.
+Мы избавились от последствий применения одноразовых функций и собрали создание
+ошибок и обработку предикатов внутри обобщающей функции-утилиты `ensure`.
+Теперь, мы напишем некоторый код, который позволит нам использовать функции в
+прямом стиле в контексте стиля передачи продолжений.
 
     function asyncify(f) {
       return function _asyncify() {
@@ -175,13 +174,14 @@ direct-style function in a continuation-passing style context.
     }
     
 
-This new function allows us to map any n-ary function that either returns a
-value or throws an error to a (n+1)-ary function whose last argument is expected
-to be a Node.js-style callback whose first argument is the thrown error (if it 
-exists) and second argument will be the returned value (if we didn’t throw
-).
 
-An example:
+Эта новая функция позволяет нам отобразить любую n-ную функцию, которая либо
+возвращает  значение, либо пробрасывает ошибку к (n+1)-ой функции, последний
+аргумент которой ожидается коллбэком в стиле Node.js, первым аргументом которого
+станет пробрасываемая ошибка (если такая существует), и вторым аргументом будет
+возвращаемое значение (если мы ничего не пробрасываем).
+
+Пример:
 
     function head(xs) {
         if (_.isArray(xs) && !_.isEmpty(xs)) {
@@ -203,8 +203,8 @@ An example:
     });
     
 
-We can now use `asyncify` function to reshape our direct-style functions into
-functions that accept callbacks.
+Теперь мы можем использовать функцию `asyncify` для превращения наших функций в
+прямом стиле в функции, принимающие коллбэк.
 
     function createEmployee(personId, callback) {
         var workflow = async.compose(
@@ -219,10 +219,10 @@ functions that accept callbacks.
     }
     
 
-Finally, we can eliminate the function expression completely; we can instead
-define`createEmployee` as the composition of our other functions. Since the
-expression does nothing more than delegate to a function with the same signature,
-we can safely eliminate it.
+Наконец, мы можем исключить функциональное выражение полностью; вместо этого мы
+определим `createEmployee` как объединение остальных функций. Так как выражение
+не делает ничего более, чем делегирование функции с теми же самыми
+характеристиками, мы можем спокойно убрать его.
 
     var createEmployee = async.compose(
         Database.createEmployee,
@@ -233,26 +233,33 @@ we can safely eliminate it.
         Database.getPersonById);
     
 
-### In Summary
+### Заключение
 
-Our final implementation reduce the code bespoke code required to validate and
-create an employee to an absolute minimum. Our resulting application is highly 
-modular;`ensure` and `asyncify` allow the bits to be used in a variety of
-contexts outside of`createEmployee`. In the end, we’ve generalized things to
-the point where our job is to simply compose generalized functions together to 
-create something specific to the problem at hand.
+Наша финальная имплементация сокращает количество специального кода,
+подключаемого для валидации и создания сотрудника, до абсолютного минимума.
+Получившееся приложение является очень модульным; `ensure` и `asyncify` могут
+быть использованы в различных контекстах за пределами `createEmployee`. Наконец,
+мы обобщили вещи до такой степени,  что нашей работой стало лишь составление
+обобщенных функций вместе для  создания чего-то специфического под возникающие
+задачи.
 
-### Related Reads (that I didn’t write)
+### Почитать по теме (что писал не я)
 
-### Related Reads (that I did)
-
-### Feedback
-
-  Comments: 5<section id="respond" class="append-xs-30">
-
-### Your feedback
-
-[Click here to cancel reply.][1]
+1. [“Достаточно хорошая” обработка ошибок Clojure][2]
+2. [Промисы — монады асинхронного программирования][3]
+3. [Ошибки монад в Clojure][4]
 
 
- [1]: http://blog.carbonfive.com/2015/01/29/composing-synchronous-and-asynchronous-functions-in-javascript/#respond
+### Почитать по теме (что написано мной)
+
+1. [Уборка приложения на JavaScript с помощью функций высшего порядка][5]
+2. [Чумовой функционал на каррированном JavaScript][6]
+
+
+
+[1]: https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%BE%D0%B4%D0%BE%D0%BB%D0%B6%D0%B5%D0%BD%D0%B8%D0%B5_(%D0%B8%D0%BD%D1%84%D0%BE%D1%80%D0%BC%D0%B0%D1%82%D0%B8%D0%BA%D0%B0)#.D0.9F.D1.80.D0.BE.D0.B3.D1.80.D0.B0.D0.BC.D0.BC.D0.B8.D1.80.D0.BE.D0.B2.D0.B0.D0.BD.D0.B8.D0.B5_.D0.B2_.D1.81.D1.82.D0.B8.D0.BB.D0.B5_.D0.BF.D0.B5.D1.80.D0.B5.D0.B4.D0.B0.D1.87.D0.B8_.D0.BF.D1.80.D0.BE.D0.B4.D0.BE.D0.BB.D0.B6.D0.B5.D0.BD.D0.B8.D0.B9
+[2]: http://adambard.com/blog/acceptable-error-handling-in-clojure/
+[3]: https://blog.jcoglan.com/2011/03/11/promises-are-the-monad-of-asynchronous-programming/
+[4]: https://brehaut.net/blog/2011/error_monads
+[5]: http://blog.carbonfive.com/2015/01/05/tidying-up-a-javascript-application-with-higher-order-functions/
+[6]: http://blog.carbonfive.com/2015/01/14/gettin-freaky-functional-wcurried-javascript/
